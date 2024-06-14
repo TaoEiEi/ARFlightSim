@@ -4236,7 +4236,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 2066979578}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1b2e651fb6e03814ca392bbc92616e00, type: 3}
+  m_Script: {fileID: 11500000, guid: 2294386e0133e3d4f92d240b89377c85, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   rollControlSensitivity: 0.2
@@ -4244,6 +4244,12 @@ MonoBehaviour:
   yawControlSensitivity: 0.2
   thrustControlSensitivity: 0.01
   flapControlSensitivity: 0.15
+  x: 0
+  y: 0
+  _GetValueY: 0
+  _GetValueX: 0
+  _Type: 0
+  _Typex: 0
 --- !u!1 &2106019376
 GameObject:
   m_ObjectHideFlags: 0

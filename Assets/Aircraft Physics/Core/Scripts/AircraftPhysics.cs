@@ -1,48 +1,54 @@
 ﻿using System.Collections.Generic;
-using UnityEditor;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 public class AircraftPhysics : MonoBehaviour
 {
     const float PREDICTION_TIMESTEP_FRACTION = 0.5f;
+    const float GRAVITY = 9.81f; // m/s²
 
-    [SerializeField] 
+    [SerializeField]
     float thrust = 0;
-    [SerializeField] 
+    [SerializeField]
     List<AeroSurface> aerodynamicSurfaces = null;
     [SerializeField]
     List<ControlSurface> controlSurfaces = null;
 
     Rigidbody rb;
     float thrustPercent;
+    bool isBraking = false;
     BiVector3 currentForceAndTorque;
+    Vector3 lastVelocity; // To store last frame velocity
 
     public void SetThrustPercent(float percent)
     {
-        thrustPercent = percent;
+        thrustPercent = Mathf.Clamp01(percent);
     }
 
+    // New method to set control surfaces angles
     public void SetControlSurfecesAngles(float pitch, float roll, float yaw, float flap)
     {
         foreach (var controlSurface in controlSurfaces)
         {
-            if (controlSurface.surface == null) return;
+            if (controlSurface.surface == null) continue;
+
+            float angle = 0;
             switch (controlSurface.type)
             {
                 case ControlSurfaceType.Pitch:
-                    controlSurface.surface.SetFlapAngle(pitch * controlSurface.flapAngle);
+                    angle = pitch * controlSurface.flapAngle;
                     break;
                 case ControlSurfaceType.Roll:
-                    controlSurface.surface.SetFlapAngle(roll * controlSurface.flapAngle);
+                    angle = roll * controlSurface.flapAngle;
                     break;
                 case ControlSurfaceType.Yaw:
-                    controlSurface.surface.SetFlapAngle(yaw * controlSurface.flapAngle);
+                    angle = yaw * controlSurface.flapAngle;
                     break;
                 case ControlSurfaceType.Flap:
-                    controlSurface.surface.SetFlapAngle(flap * controlSurface.flapAngle);
+                    angle = flap * controlSurface.flapAngle;
                     break;
             }
+            controlSurface.surface.SetFlapAngle(angle);
         }
     }
 
@@ -53,20 +59,29 @@ public class AircraftPhysics : MonoBehaviour
 
     private void FixedUpdate()
     {
-        BiVector3 forceAndTorqueThisFrame = 
-            CalculateAerodynamicForces(rb.velocity, rb.angularVelocity, Vector3.zero, 1.2f, rb.worldCenterOfMass);
+        BiVector3 forceAndTorqueThisFrame = CalculateAerodynamicForces(
+            rb.velocity, rb.angularVelocity, Vector3.zero, 1.2f, rb.worldCenterOfMass);
 
         Vector3 velocityPrediction = PredictVelocity(forceAndTorqueThisFrame.p);
         Vector3 angularVelocityPrediction = PredictAngularVelocity(forceAndTorqueThisFrame.q);
 
-        BiVector3 forceAndTorquePrediction = 
-            CalculateAerodynamicForces(velocityPrediction, angularVelocityPrediction, Vector3.zero, 1.2f, rb.worldCenterOfMass);
+        BiVector3 forceAndTorquePrediction = CalculateAerodynamicForces(
+            velocityPrediction, angularVelocityPrediction, Vector3.zero, 1.2f, rb.worldCenterOfMass);
 
         currentForceAndTorque = (forceAndTorqueThisFrame + forceAndTorquePrediction) * 0.5f;
         rb.AddForce(currentForceAndTorque.p);
         rb.AddTorque(currentForceAndTorque.q);
 
+        // Add thrust force
         rb.AddForce(transform.forward * thrust * thrustPercent);
+
+        // Apply braking by increasing drag
+        rb.drag = isBraking ? 2f : 0.2f; // Increase drag to simulate braking
+
+        // Calculate G-force
+        Vector3 gForce = CalculateGForce();
+        // You can now use the gForce vector for further processing or display
+        Debug.Log("G-Force: " + gForce);
     }
 
     private BiVector3 CalculateAerodynamicForces(Vector3 velocity, Vector3 angularVelocity, Vector3 wind, float airDensity, Vector3 centerOfMass)
@@ -75,9 +90,8 @@ public class AircraftPhysics : MonoBehaviour
         foreach (var surface in aerodynamicSurfaces)
         {
             Vector3 relativePosition = surface.transform.position - centerOfMass;
-            forceAndTorque += surface.CalculateForces(-velocity + wind
-                -Vector3.Cross(angularVelocity,
-                relativePosition),
+            forceAndTorque += surface.CalculateForces(
+                -velocity + wind - Vector3.Cross(angularVelocity, relativePosition),
                 airDensity, relativePosition);
         }
         return forceAndTorque;
@@ -101,26 +115,24 @@ public class AircraftPhysics : MonoBehaviour
             * (inertiaTensorWorldRotation * angularVelocityChangeInDiagonalSpace);
     }
 
-    public void Brake(bool isBraking) //increases drag on wheels
+    public void Brake(bool isBraking)
     {
-        //add drag on wheels
-        SphereCollider[] wheels = FindObjectsOfType<SphereCollider>();
+        this.isBraking = isBraking;
+    }
 
-        //change based on isBraking
-        float friction;
-        if (isBraking)
-        {
-            friction = 0.2f;
-        }
-        else
-        {
-            friction = 0f;
-        }
+    private Vector3 CalculateGForce()
+    {
+        // Calculate the change in velocity
+        Vector3 acceleration = (rb.velocity - lastVelocity) / Time.fixedDeltaTime;
 
-        foreach (SphereCollider wheel in wheels)
-        {
-            wheel.material.dynamicFriction = friction;
-        }
+        // Update last velocity for the next frame
+        lastVelocity = rb.velocity;
+
+        // Convert acceleration to G-force
+        Vector3 gForce = acceleration / GRAVITY;
+
+        // Return the G-force vector
+        return gForce;
     }
 
 #if UNITY_EDITOR
@@ -161,9 +173,15 @@ public class AircraftPhysics : MonoBehaviour
 [System.Serializable]
 public class ControlSurface
 {
-    public AeroSurface surface;
-    public float flapAngle;
-    public ControlSurfaceType type;
+    public AeroSurface surface;   // พื้นผิวควบคุมที่ใช้สำหรับการควบคุมการบิน
+    public float flapAngle;       // มุมของแผงควบคุม
+    public ControlSurfaceType type; // ประเภทของแผงควบคุม
 }
 
-public enum ControlSurfaceType { Pitch, Yaw, Roll, Flap }
+public enum ControlSurfaceType
+{
+    Pitch,  // ควบคุมการก้มและเงย
+    Yaw,    // ควบคุมการหันซ้ายและขวา
+    Roll,   // ควบคุมการกลิ้ง
+    Flap    // ควบคุมแผงปรับองศา
+}

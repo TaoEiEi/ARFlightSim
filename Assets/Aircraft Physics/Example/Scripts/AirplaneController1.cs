@@ -170,4 +170,8 @@ public class AirplaneController1 : MonoBehaviour
         aircraftPhysics.SetThrustPercent(thrustPercent);
         aircraftPhysics.Brake(brake);
     }
+    public void OnButtonPressed()
+    {
+        SetThrust(thrustPercent + thrustControlSensitivity);
+    }
 }
